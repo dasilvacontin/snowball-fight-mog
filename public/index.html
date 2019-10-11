@@ -21,7 +21,10 @@
 
 <canvas></canvas>
 
+<script src="/socket.io/socket.io.js"></script>
 <script>
+
+const socket = io()
 
 const canvas = document.getElementsByTagName('canvas')[0]
 canvas.width = window.innerWidth
@@ -33,6 +36,8 @@ const ctx = canvas.getContext('2d')
 const keyboardState = {}
 
 function renderAvatar (player) {
+    if (player.eliminated) return
+
     ctx.save()
     ctx.translate(player.x, player.y)
 
@@ -98,7 +103,8 @@ const FACING_RIGHT = 3
 const gameState = {
     players: [
         {
-            username: 'dasilvacontin',
+            username: prompt("What's your username?"),
+            playerId: Math.floor(Math.random() * 100000000),
             x: 50, y: 50,
             color: '#ae83c3',
             rotation: FACING_DOWN,
@@ -112,16 +118,11 @@ const gameState = {
                     vx: SNOWBALL_SPEED, vy: 0
                 }
             ]
-        },
-        {
-            username: 'xmx.luo',
-            x: 200, y: 100,
-            color: '#e29546',
-            rotation: FACING_RIGHT,
-            snowballs: []
         }
     ]
 }
+
+const myPlayerId = gameState.players[0].playerId
 
 function render (state) {
     ctx.fillStyle = 'white'
@@ -166,21 +167,23 @@ function logicStep (state) {
 
     // only moving player one now
     const myPlayer = state.players[0]
-    if (keyboardState.w) {
-        myPlayer.y -= PLAYER_SPEED
-        myPlayer.rotation = FACING_UP
-    }
-    if (keyboardState.s) {
-        myPlayer.y += PLAYER_SPEED
-        myPlayer.rotation = FACING_DOWN
-    }
-    if (keyboardState.d) {
-        state.players[0].x += PLAYER_SPEED
-        myPlayer.rotation = FACING_RIGHT
-    }
-    if (keyboardState.a) {
-        state.players[0].x -= PLAYER_SPEED
-        myPlayer.rotation = FACING_LEFT
+    if (!myPlayer.eliminated) {
+        if (keyboardState.w) {
+            myPlayer.y -= PLAYER_SPEED
+            myPlayer.rotation = FACING_UP
+        }
+        if (keyboardState.s) {
+            myPlayer.y += PLAYER_SPEED
+            myPlayer.rotation = FACING_DOWN
+        }
+        if (keyboardState.d) {
+            state.players[0].x += PLAYER_SPEED
+            myPlayer.rotation = FACING_RIGHT
+        }
+        if (keyboardState.a) {
+            state.players[0].x -= PLAYER_SPEED
+            myPlayer.rotation = FACING_LEFT
+        }
     }
 
     // collision algorithm
@@ -194,15 +197,19 @@ function logicStep (state) {
 
                 if (hitTestPlayerVsSnowball(playerB, snowball)) {
                     snowball.remove = true
-                    playerB.eliminated = true
+                    if (playerB.playerId === myPlayerId) {
+                        // others must remove themselves
+                        playerB.eliminated = true
+                    }
                 }
             })
         })
     })
 
     // remove eliminated players
-    state.players = state.players.filter(player => !player.eliminated)
+    // state.players = state.players.filter(player => !player.eliminated)
 
+    socket.emit('stateUpdate', state.players[0])
 }
 
 function gameLoop () {
@@ -247,6 +254,27 @@ document.addEventListener('keyup', function (e) {
     keyboardState[e.key] = false
 })
 
+
+socket.on('stateUpdateForwardedByServer', function (player) {
+    if (player.playerId === myPlayerId) {
+        // ignore own update
+        return
+    }
+
+    let playerWasFound = false
+    for (let i = 0; i < gameState.players.length; ++i) {
+        if (gameState.players[i].playerId === player.playerId) {
+            gameState.players[i] = player
+            playerWasFound = true
+            break // don't continue looping, pointless
+        }
+    }
+
+    if (!playerWasFound) {
+        // player we haven't seen before
+        gameState.players.push(player)
+    }
+})
 </script>
 
 </body>
